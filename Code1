@@ -1,0 +1,376 @@
+/********************************************************************************
+Description.. :	
+
+Parameters... :	- 
+
+Returns...... :	- 
+
+Author....... :	SYSADM
+Date......... : 2020-04-09
+********************************************************************************
+_______________________________________________________________________________
+
+Modification. : 
+Author....... :	
+Date......... :	
+_______________________________________________________________________________
+********************************************************************************/;
+:PARAMETERS BatchNo,Create_Date,nMatcode,Qty,Unit_Of_Measure,Vendor_code,VendorName,Vendor_BatchNo,
+			MFG_DATE,EXP_Date,Retest_Date,Plant,Mfg_name,nInspectionLotNo,sDescription,nGRN,nShelfLife,sChemicalName,nMG3code,sCustomername,nCustomercode,nSales_orderNo,nCustomerPOno,nDeliveryNo,LBL_COUNT_CONTAINER,nProcessorderno,Mfg_nameDoc_No,Doc_No,Line_No,SAPBATNO,MFG_code,Periodic_Indicator,Storage_Location,Scrap_RequiredAmv_Required,SAPUser,Ticket_No,STORAGE_LOC_NAME,
+			LBL_COUNT_PALLET,LBL_COUNT_BOXES, SGT_TYPE, SYSTEMID, PO_TYPE;
+			
+:DECLARE sSupName;
+sSupName := sqlexecute("select SUPPNAM from SUPPLIERS where SUPPCODE = ?Vendor_code? ");
+:IF len(sSupName) > 0;	
+VendorName := sSupName[1,1];
+:ENDIF;
+
+nInsertWebservicelog := sqlexecute("select PARAMETER01 from WEBSERVICE_LOG where PARAMETER01 = ?BatchNo? AND STATUS = 'N' "); 
+
+/*:IF LEN(nInsertWebservicelog) >0;
+/*	:RETURN "A";
+/*:ENDIF;	
+SqlExecute("Insert Into WEBSERVICE_LOG(WEBMETHOD,CREATEDON,PARAMETER01,PARAMETER02,PARAMETER03,PARAMETER04,
+										PARAMETER05,PARAMETER06,PARAMETER07,PARAMETER08,PARAMETER09,PARAMETER10,
+										PARAMETER11,PARAMETER12,PARAMETER13,PARAMETER14,PARAMETER15,PARAMETER16,PARAMETER17,PARAMETER18,
+										PARAMETER19,PARAMETER20,PARAMETER21,PARAMETER22,PARAMETER23,PARAMETER24,PARAMETER25,PARAMETER26,PARAMETER27,
+										PARAMETER28,PARAMETER29,PARAMETER30,PARAMETER31,PARAMETER32,PARAMETER33,PARAMETER34,PARAMETER35,PARAMETER36,PARAMETER37,PARAMETER38,PARAMETER39,PARAMETER40,PARAMETER41,PARAMETER42) 
+								values ('CreateInspectionLot',{fn Now()},?BatchNo?,?Create_Date?,?nMatcode?,?Qty?,
+										?Unit_Of_Measure?,?Vendor_code?,?VendorName?,?Vendor_BatchNo?,?MFG_DATE?,?EXP_Date?,
+										?Retest_Date?,?Plant?,?Mfg_name?,?nInspectionLotNo?,?sDescription?,?nGRN?,?nShelfLife?,?sChemicalName?,?nMG3code?,?sCustomername?,?nCustomercode?,
+										?nSales_orderNo?,?nCustomerPOno?,?nDeliveryNo?,?LBL_COUNT_CONTAINER?,?nProcessorderno?,?Mfg_nameDoc_No?,?Doc_No?,?Line_No?,?SAPBATNO?,?MFG_code?,?Periodic_Indicator?,?Storage_Location?,
+										?Scrap_RequiredAmv_Required?,?SAPUser?,?Ticket_No?,?STORAGE_LOC_NAME?,?LBL_COUNT_PALLET?,?LBL_COUNT_BOXES?,?SGT_TYPE?,?SYSTEMID?,?PO_TYPE?)");
+										
+ sMattType := sqlexecute("select MATTYPE from MATERIALS where MATCODE = ?nMatcode?");	
+:IF  sMattType[1,1] == "FERT";
+
+aSampleGrpTemplateCheck := SqlExecute("select * from IPSAMPLEGROUPDETAILS d 
+															join SAMPLE_PROGRAMS p on d.SP_CODE = p.SP_CODE and p.MATCODE = d.MATCODE
+															join IPSAMPLEGRPOUPS IP on IP.SAMPLEGROUPCODE = d.SAMPLEGROUPCODE
+															where p.VERSION = (select Max(Version) from SAMPLE_PROGRAMS where MATCODE = d.MATCODE)
+															and p.MATCODE = ?nMatcode? and d.DISPSTATUS = 'Released' 
+															and IP.ACTIVE = 'Y' and IP.plant = ?Plant?
+															");
+	:IF Len(aSampleGrpTemplateCheck)==0;
+
+		:RETURN {-16};
+	:ELSE;
+		:RETURN {13};
+	:ENDIF;
+:ENDIF;	
+
+sStatus := DoProc("BatchProcess");										
+:RETURN {sStatus};
+
+
+:PROCEDURE BatchProcess;
+:DECLARE aData;
+:DECLARE aData,	aDept,sDept,arrResult,aSpecdata,nILNumber,aUnits,sActualUnits,scheck,aSampleGrpTemplateCheck,nBatchID,
+				check,sMattype,aMattype,sProdGroup,sSampleGrpTemplateCheck,sUnits;
+aData := SqlExecute("select Top 1 PARAMETER01,PARAMETER02,PARAMETER03,PARAMETER04,
+								  PARAMETER05,PARAMETER06,PARAMETER07,PARAMETER08,PARAMETER09,PARAMETER10,PARAMETER11,PARAMETER12,
+								  PARAMETER13,PARAMETER14,PARAMETER15,PARAMETER16,PARAMETER17,PARAMETER18,PARAMETER19,PARAMETER20,
+								  PARAMETER21,PARAMETER22,PARAMETER23,PARAMETER24,PARAMETER25,PARAMETER26,PARAMETER27,
+								  PARAMETER28,PARAMETER29,PARAMETER30,PARAMETER31,PARAMETER32,PARAMETER33,PARAMETER34,PARAMETER35,PARAMETER36,PARAMETER37,PARAMETER38,PARAMETER39,PARAMETER40,PARAMETER41,PARAMETER42,ORIGREC
+								  from WEBSERVICE_LOG
+								  where WEBMETHOD = 'CreateInspectionLot' and STATUS = 'N' and PARAMETER01 is not null and PARAMETER14 in (?nInspectionLotNo?) ORDER BY ORIGREC DESC");
+
+:IF Len(aData) = 0;
+	:RETURN;
+:ENDIF;
+
+InspBatchNo                  := aData[1,1];
+Create_Date 	             := aData[1,2];
+nMatcode                     := aData[1,3];
+Qty        		             := aData[1,4];
+Unit_Of_Measure              := aData[1,5];
+Vendor_code                  := aData[1,6];
+VendorName                   := aData[1,7];
+Vendor_BatchNo               := aData[1,8];
+MFG_DATE                     := aData[1,9];
+EXP_Date                     := aData[1,10];
+Retest_Date                  := aData[1,11];
+Plant                        := aData[1,12];
+Mfg_name                     := aData[1,13];
+nInspectionLotNo             := aData[1,14];
+sDescription                 := aData[1,15];
+nGRN                         := aData[1,16];
+nShelfLife                   := aData[1,17];
+sChemicalName                := aData[1,18];
+nMG3code                     := aData[1,19];
+sCustomername 	             := aData[1,20];
+nCustomercode	             := aData[1,21];
+nSales_orderNo               := aData[1,22];
+nCustomerPOno                := aData[1,23];
+nDeliveryNo                  := aData[1,24];
+LBL_COUNT_CONTAINER	         := aData[1,25];
+nProcessorderno              := aData[1,26];
+Mfg_nameDoc_No               := aData[1,27];
+Doc_No                       := aData[1,28];
+Line_No                      := aData[1,29];
+SAPBATNO                     := aData[1,30];
+MFG_code                     := aData[1,31];
+Periodic_Indicator           := aData[1,32];
+Storage_Location             := aData[1,33];
+Scrap_RequiredAmv_Required   := aData[1,34];
+SAPUser             		 := aData[1,35];
+Ticket_No			         := aData[1,36];
+STORAGE_LOC_NAME             := aData[1,37];
+LBL_COUNT_PALLET             := aData[1,38];
+LBL_COUNT_BOXES              := aData[1,39];
+SGT_TYPE                     := aData[1,40];
+SYSTEMID                     := aData[1,41];
+PO_TYPE                      := aData[1,42];
+sOrigrec                     := aData[1,43];
+aMattype := SqlExecute("select MATTYPE from MATERIALS where MATCODE = ?nMatcode?");
+:IF Len(aMattype) >0;
+	sMattype := aMattype[1,1];
+:ENDIF;
+
+aUnits := SqlExecute("select COUNT(*) from UNITS_OF_MEASURE where UNIT_CODE = ?Unit_of_Measure?");
+
+:IF Len(aUnits)>0;
+	sUnits := aUnits[1,1];
+	:IF sUnits == 0;
+	:ENDIF;
+:ENDIF;
+
+:IF sMattype = 'ROH' .OR. sMattype = 'VERP' .OR. sMattype = 'ZSAM' .OR. sMattype = 'HIBE' .OR. sMattype = 'HALB';
+	:IF Unit_Of_Measure == 'TS' .OR. Unit_Of_Measure == 'TH';
+		sActualUnits := 'EA';
+		aFactor :=  SqlExecute("Select {fn IfNull(max({fn IfNull(FACTOR,1)}), 1)} as FACTOR from UNITS_CONVERSION 
+														where {fn UCASE(UNIT_CODE)} = {fn UCASE(?Unit_Of_Measure?)} and {fn UCASE(TO_UNIT_CODE)} = {fn UCASE(?sActualUnits?)} 
+														and {fn IfNull(IS_NA, 'N')} = 'N'");
+			nFactor := aFactor[1,1];
+			Qty  	:= Val(Qty)*nFactor;
+			Qty 	:= Limsstring(Qty);
+	:ENDIF;
+:ENDIF;
+
+:IF sMattype = 'ROH' .OR. sMattype = 'VERP' .OR. sMattype = 'HALB';
+	sCheckBatchExists := SqlExecute("select count(*) from BATCHES where BATCHNO = ?InspBatchNo? and MATCODE = ?nMatcode?");
+	:IF Len(sCheckBatchExists)>0;
+		sCheckBatchExists := sCheckBatchExists[1,1];
+		:IF sCheckBatchExists != 0;
+		:ENDIF;
+	:ENDIF;
+:ELSE;
+	sCheckBatchExists := SqlExecute("select count(*) from BATCHES where BATCHNO = ?InspBatchNo? and MATCODE = ?nMatcode?");
+	:IF Len(sCheckBatchExists)>0;
+		sCheckBatchExists := sCheckBatchExists[1,1];
+		:IF sCheckBatchExists != 0;
+		:ENDIF;
+	:ENDIF;
+:ENDIF;
+
+aDept := SqlExecute("Select DEPT from PLANTS where PLANT = ?Plant?");
+:IF Len(aDept)>0;
+	sDept := aDept[1,1];
+	AddToSession("STARLIMSDEPT",sDept);
+	STARLIMSDEPT := sDept;
+:ENDIF;
+
+:IF EMPTY(Vendor_Code);
+	Vendor_Code := 'N/A';
+:ELSE;
+	aVendorCode := SqlExecute("Select SUPPCODE from SUPPLIERS where SUPPCODE = ?Vendor_Code?");
+	:IF Len(aVendorCode) = 0 ;
+		SqlExecute("Insert into SUPPLIERS (SUPPCODE,SUPPNAM) values (?Vendor_Code?,?VendorName?)");
+	:ENDIF;
+:ENDIF;
+	
+:IF sMattype = 'ROH' .OR. sMattype = 'VERP' .OR. sMattype = 'ZSAM' .OR. sMattype = 'HIBE' .OR. sMattype = 'FERT' .OR. sMattype = 'HALB';
+	aSampleGrpTemplateCheck := SqlExecute("select * from IPSAMPLEGROUPDETAILS d 
+															join SAMPLE_PROGRAMS p on d.SP_CODE = p.SP_CODE and p.MATCODE = d.MATCODE
+															join IPSAMPLEGRPOUPS IP on IP.SAMPLEGROUPCODE = d.SAMPLEGROUPCODE
+															where p.VERSION = (select Max(Version) from SAMPLE_PROGRAMS where MATCODE = d.MATCODE)
+															and p.MATCODE = ?nMatcode? and d.DISPSTATUS = 'Released' 
+															and IP.ACTIVE = 'Y' and IP.plant = ?Plant?
+															");
+	:IF Len(aSampleGrpTemplateCheck)==0;
+		:RETURN -16;
+	:ENDIF;
+	:IF Len(aSampleGrpTemplateCheck)>0;
+		sSampleGrpTemplateCheck := aSampleGrpTemplateCheck[1,1];
+	:ENDIF;
+check := DoProc("AddRawMaterialandPackagingLot",{sCheckBatchExists,sUnits,sSampleGrpTemplateCheck,InspBatchNo,Line_No,Vendor_code,Vendor_BatchNo,MFG_DATE,Create_Date,Qty,Unit_Of_Measure,SAPBATNO,EXP_Date,Plant, Mfg_name,nInspectionLotNo,sDescription,nGRN,nShelfLife,sChemicalName,nCustomerPOno});
+DoProc("ARDS");
+
+:RETURN check;	
+:ELSE;
+	aSampleGrpTemplateCheck := SqlExecute("select * from IPSAMPLEGROUPDETAILS d
+																join IPSAMPLEGRPOUPS g on d.SAMPLEGROUPCODE = g.SAMPLEGROUPCODE
+																join SAMPLE_PROGRAMS p on d.SP_CODE = p.SP_CODE 					
+																where g.MATCODE = ?nMatcode? and g.ACTIVE = 'Y' and d.DISPSTATUS = 'Released' and g.PLANT = ?Plant? 
+																and g.SAMPGRTYPE = 'LOTTEMPLATE'");
+	:IF Len(aSampleGrpTemplateCheck)>0;
+		sSampleGrpTemplateCheck := aSampleGrpTemplateCheck[1,1];
+	:ENDIF;
+	check := DoProc("AddFPLot",{sCheckBatchExists,sUnits,sSampleGrpTemplateCheck,SAPBATNO,Create_Date,SAPBATNO,Qty,Unit_Of_Measure,Plant});
+:ENDIF;
+:IF Len(check)>0;
+	sOrder := check[0];
+	scheck 	 := check[1];
+	nBatchID := check[2];
+:ENDIF;
+
+DoProc("ARDS");
+
+sFolderNo := SqlExecute("select FOLDERNO from FOLDERS where BATCHID = ?nBatchID?");
+
+:IF Len(sFolderNo) > 0;
+	sFolderNo := sFolderNo[1,1];
+:ELSE;
+	sFolderNo := '';
+:ENDIF;
+
+:IF scheck = .T. .AND. sCheckBatchExists = 0 .AND. sUnits != 0 .AND. sSampleGrpTemplateCheck != 0;
+	comment := 0;
+:ELSE;
+	:IF sUnits == 0;
+		comment := '1-Units not yet configured';
+	:ELSE;
+		:IF sCheckBatchExists != 0;
+			comment := '1-Batch already exists';
+		:ELSE;
+			:IF sSampleGrpTemplateCheck == 0;
+				comment := -16; /*'1-SGT not yet configured or Released'*/;
+			:ELSE;
+				comment := 1;
+			:ENDIF;
+		:ENDIF;
+	:ENDIF;
+
+:RETURN comment;
+
+:ENDIF;
+
+:ENDPROC;
+
+:PROCEDURE ARDS;
+
+
+		:IF sCheckBatchExists = 0 .AND. sUnits != 0 .AND. sSampleGrpTemplateCheck != 0;
+		
+			SqlExecute("update BATCHES set LBL_COUNT_CONTAINER = ?LBL_COUNT_CONTAINER?,LBL_COUNT_PALLET = ?LBL_COUNT_PALLET?,LBL_COUNT_BOXES = ?LBL_COUNT_BOXES?, LABELS_COUNT = ?LBL_COUNT_PALLET?,
+										VESSEL = ?LBL_COUNT_CONTAINER?, CREATORID = ?Mfg_name?, CATNO = ?Doc_No?, RETEST_DATE = ?Retest_Date?, SAP_UNIT = ?Unit_Of_Measure?, 
+										OPENDATE = ?Create_Date?, ENDDATE = ?MFG_DATE?, PREVBATCHNO = ?Vendor_BatchNo?, ADDITIVETYPE = ?Periodic_Indicator? where BATCHID = ?nBatchID?");
+										
+			SqlExecute("update METADATA set FIELD01 = ?Vendor_Code?, FIELD02 = ?VendorName?, FIELD03 = ?MFG_code?, FIELD04 = ?Mfg_name?, FIELD05 = ?MFG_DATE?,
+											FIELD06 = ?LBL_COUNT_PALLET?, FIELD07 = ?LBL_COUNT_BOXES?, FIELD08 = ?LBL_COUNT_CONTAINER?, FIELD09 = ?SAPUser?, 
+											FIELD10 = ?Vendor_BatchNo?,FIELD11 = ?Retest_Date?,FIELD12 = ?Doc_No? where ID in (select METADATA_GUID from BATCHES where BATCHID = ?nBatchID?)");
+			sProdGroup := SqlExecute("select PRODGROUP FROM BATCHES WHERE BATCHID = ?nBatchID?");
+			:IF sProdGroup == 'Packaging materials';
+				:IF Unit_Of_Measure == 'TS' .OR. Unit_Of_Measure == 'TH';
+					sActualUnits := 'EA';
+					SqlExecute("update BATCHES set ESTIMATEDVOL_UNITS = ?sActualUnits?,SAP_UNIT = ?Unit_Of_Measure? where BATCHID = ?nBatchID?");
+				:ENDIF;
+			:ENDIF;	
+			
+		aBatchid := SQLEXECUTE ("Select BATCHID from BATCHES where BATCHNO = ?InspBatchNo?");
+		nBatchID := aBatchid[1];
+			ExecFunction("BatchManager.UpdateARDSIDForSampleTests",{nBatchID});
+		:ENDIF;
+
+:ENDPROC;
+
+
+:PROCEDURE AddFPLot;
+:PARAMETERS sCheckBatchExists,sUnits,sSampleGrpTemplateCheck,SAPBATNO,Create_Date,SAPBATNO,Qty,Unit_Of_Measure,Plant;
+:DECLARE aGroupcode,check,chkSamplingRequirementsBasedOnSampleDefinition,chkCreateSampleForEachInventory,arrSampleSteps,sGroupCode;
+	:IF  sUnits != 0 .AND. sSampleGrpTemplateCheck != 0;
+				
+		chkSamplingRequirementsBasedOnSampleDefinition := ".F.";	
+	
+		chkCreateSampleForEachInventory := ".F.";
+	
+		aGroupcode := SqlExecute("select distinct d.SAMPLEGROUPCODE, p.MATCODE, d.SP_CODE, p.VERSION from IPSAMPLEGROUPDETAILS d 
+																	join IPSAMPLEGRPOUPS g on d.SAMPLEGROUPCODE = g.SAMPLEGROUPCODE
+																	join SAMPLE_PROGRAMS p on d.SP_CODE = p.SP_CODE 					
+																	where g.MATCODE = ?nMatcode? and g.ACTIVE = 'Y' and d.DISPSTATUS = 'Released' and g.PLANT = ?Plant? 
+																	and g.SAMPGRTYPE = 'LOTTEMPLATE' order by p.VERSION DESC");
+		:TRY;
+			sGroupCode := aGroupcode[1,1];
+		:CATCH;
+		:ENDTRY;
+		
+		arrSampleSteps := ExecFunction("BatchManager.GetProductStepArray",{sGroupCode});
+
+		check :=  ExecFunction("BatchManager.AddLotPlanSamples",
+									{sGroupCode,arrSampleSteps,SAPBATNO,-1,Create_Date, 									
+										,{},SAPBATNO,,1, 
+										Qty, Unit_Of_Measure,NIL,NIL,NIL,
+										Plant,,NIL,.F.,.F.,
+										NIL,NIL,1,'Annual'});
+			
+		:TRY;
+			:RETURN check;
+		:CATCH;
+			SqlExecute("update WEBSERVICE_LOG set status = 'F' where ORIGREC = ?sOrigrec?");
+		:ENDTRY;
+	:ENDIF;
+
+:ENDPROC;
+
+:PROCEDURE AddRawMaterialandPackagingLot;
+:PARAMETERS sCheckBatchExists,sUnits,sSampleGrpTemplateCheck,InspBatchNo,Line_No,Vendor_code,Vendor_BatchNo,MFG_DATE,Create_Date,Qty,Unit_Of_Measure,SAPBATNO,EXP_Date,Plant, Mfg_name,nInspectionLotNo,sDescription,nGRN,nShelfLife,sChemicalName,nCustomerPOno;
+:DECLARE aGroupcode,check,aSpecdata,chkSamplingRequirementsBasedOnSampleDefinition,chkCreateSampleForEachInventory,nSpcode,sGroupCode,nSpecno;
+	:IF  sUnits != 0 .AND. sSampleGrpTemplateCheck != 0;
+	
+		aGroupcode := SqlExecute("select distinct d.SAMPLEGROUPCODE, p.MATCODE, d.SP_CODE,  p.VERSION from IPSAMPLEGROUPDETAILS d 
+																	join SAMPLE_PROGRAMS p on d.SP_CODE = p.SP_CODE
+																	join IPSAMPLEGRPOUPS IP on IP.SAMPLEGROUPCODE = d.SAMPLEGROUPCODE
+																	where p.MATCODE = ?nMatcode? and d.DISPSTATUS = 'Released' and IP.ACTIVE = 'Y' and IP.plant = ?Plant?
+																	order by p.VERSION DESC");
+																	
+																	
+																	
+		chkSamplingRequirementsBasedOnSampleDefinition := ".F.";	
+		chkCreateSampleForEachInventory := ".F.";
+	usrmes("coming");	
+		:TRY;
+			sGroupCode := aGroupcode[1,1];
+			nSpcode    := aGroupcode[1,3];
+		:CATCH;
+/*			usrmes("Sample group template not yet configured or released");
+		:ENDTRY;
+		aSpecdata := SqlExecute("select SPECIFICATIONS.SPECIFICATION, SPEC_SETS.SPECNO,max(sample_programs.version)
+																from IPSAMPLEGROUPDETAILS
+																join SAMPLE_PROGRAMS on IPSAMPLEGROUPDETAILS.SP_CODE = SAMPLE_PROGRAMS.SP_CODE 
+																left join SP_SPECS on SP_SPECS.SP_CODE = SAMPLE_PROGRAMS.SP_CODE and SP_SPECS.PRIMARY_SPEC = 'Y'
+																left join SPECIFICATIONS on SP_SPECS.SPECIFICATION_O = SPECIFICATIONS.ORIGREC
+																join SPEC_SETS on SPEC_SETS.SPECIFICATION_O = SPECIFICATIONS.ORIGREC 
+																and SAMPLE_PROGRAMS.MATCODE = ?nMatcode? and IPSAMPLEGROUPDETAILS.STATUS = 'Released'	and SAMPLE_PROGRAMS.SP_CODE  = ?nSpcode?
+																group by SPECIFICATIONS.SPECIFICATION , SPEC_SETS.SPECNO 
+																order by max(sample_programs.version),max(SPEC_SETS.version)  desc");
+		
+																
+		:TRY;
+			nSpecno := aSpecdata[1,2];
+		:CATCH;
+/*			usrmes("no specification is configured for the material");
+		:ENDTRY;
+			usrmes("am here",);
+		check := ExecFunction("BatchManager.AddRawMatSample",
+										{	sGroupCode,nSpcode,Vendor_code,InspBatchNo,MFG_DATE,
+											Create_Date,NIL,val(Qty),Unit_Of_Measure,sDescription, 
+											0, Vendor_BatchNo,EXP_Date,NIL,Plant,
+											NIL,NIL,chkSamplingRequirementsBasedOnSampleDefinition,chkCreateSampleForEachInventory,
+											NIL,NIL,nSpecno,nInspectionLotNo,VendorName ,Mfg_name ,LBL_COUNT_CONTAINER,Retest_Date,nGRN,NIL,sChemicalName,NIL,nShelfLife,nCustomerPOno
+										});			
+
+		
+		:IF check[3] == -1 .OR. check[3] == -80 .OR. check[3] == -99 ; 
+				SqlExecute("update WEBSERVICE_LOG set status = 'F' where ORIGREC = ?sOrigrec?");
+			:RETURN  15;
+		:ELSE;
+			:RETURN 14;
+		:ENDIF;			
+		
+		:TRY;
+			:RETURN check;
+		:CATCH;
+			SqlExecute("update WEBSERVICE_LOG set status = 'F' where ORIGREC = ?sOrigrec?");
+		:ENDTRY;
+	:ENDIF;
+:ENDPROC;
